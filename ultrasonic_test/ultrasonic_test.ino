@@ -20,7 +20,7 @@ void setup() {
     pinMode(ECHO_PIN, INPUT);  // Sets the ECHO_PIN as an Input
 }
 
-void loop() {
+void checkObstacle() {
     // Get the distance in centimeters
     long distanceCm = getDistance();
     

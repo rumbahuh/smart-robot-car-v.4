@@ -24,8 +24,8 @@ bool lineDetected = false;
 bool obstacleDetected = false;
 bool canStart = false;
 
-const int BASE_SPEED = 150;
-const int TURN_SPEED = 100;
+const int BASE_SPEED = 90;
+const int TURN_SPEED = 80;
 const int LINE_THRESHOLD = 500;
 const int MAX_OBSTACLE_DISTANCE = 30;
 
