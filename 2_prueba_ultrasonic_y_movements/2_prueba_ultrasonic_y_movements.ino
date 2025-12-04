@@ -67,14 +67,21 @@ void followLine() {
     } else if (rightSensor > LINE_THRESHOLD) {
         turnRight();
     } else {
-        lineLost();
+        int initialTime = millis();
+        lineLost(initialTime);
         Serial.println("LINE_SEARCH_NEEDED");
     }
 }
 
-void lineLost() {
+void lineLost(int initialTime) {
     turnRight();
-    turnLeft();
+    if (rightSensor > LINE_THRESHOLD) {
+        if(millis() - initialTime >= 500) {
+            turnLeft();
+        } else {
+            turnRight();
+        }
+    } 
 }
 
 void turnLeft() {
