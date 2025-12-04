@@ -1,0 +1,209 @@
+// Combined Test Sketch: Verifies motor movement functions and ultrasonic sensor interaction.
+#include <FastLED.h>
+
+// --- PIN DEFINITIONS ---
+// Ultrasonic Sensor Pins
+#define TRIG_PIN 13
+#define ECHO_PIN 12
+
+#define LEFT_SENSOR_PIN A2
+#define CENTER_SENSOR_PIN A1
+#define RIGHT_SENSOR_PIN A0
+
+#define LED_PIN 2
+#define NUM_LEDS 1
+#define LED_BRIGHTNESS 50
+
+// Motor Driver Pins (assuming an L298N-type driver)
+#define MOTOR_STBY_PIN 3
+#define MOTOR_A_DIR_PIN 7
+#define MOTOR_A_SPEED_PIN 5 // PWM for speed
+#define MOTOR_B_DIR_PIN 8
+#define MOTOR_B_SPEED_PIN 6 // PWM for speed
+
+CRGB leds[NUM_LEDS];
+
+// --- CONSTANTS ---
+const int BASE_SPEED = 90;
+const int TURN_SPEED = 80;
+const int LINE_THRESHOLD = 500;
+const int STOP_DISTANCE_CM = 8;     // Obstacle threshold: stop if distance is <= 8 cm
+const int LOOP_DELAY_MS = 100;      // Delay between sensor readings/actions
+
+int leftSensor, centerSensor, rightSensor;
+bool lineDetected = false;
+
+// --- GLOBAL VARIABLE ---
+long obstacleDistance;
+long timeLineLost = 0; // Global variable to track when the line was lost for the search pattern
+
+
+void readSensors() {
+    leftSensor = analogRead(LEFT_SENSOR_PIN);
+    centerSensor = analogRead(CENTER_SENSOR_PIN);
+    rightSensor = analogRead(RIGHT_SENSOR_PIN);
+    
+    bool previousLineState = lineDetected;
+    lineDetected = (leftSensor > LINE_THRESHOLD) || 
+                   (centerSensor > LINE_THRESHOLD) || 
+                   (rightSensor > LINE_THRESHOLD);
+    
+    if (lineDetected) {
+        setLedColor(0, 255, 0);
+    } else {
+        setLedColor(255, 0, 0);
+    }
+    
+    if (previousLineState && !lineDetected) {
+        Serial.println("LINE_LOST");
+    } else if (!previousLineState && lineDetected) {
+        Serial.println("LINE_FOUND");
+    }
+}
+
+void followLine() {
+    if (centerSensor > LINE_THRESHOLD) {
+        moveForward(BASE_SPEED);
+        timeLineLost = 0;
+    } else if (leftSensor > LINE_THRESHOLD) {
+        turnLeft();
+        timeLineLost = 0;
+    } else if (rightSensor > LINE_THRESHOLD) {
+        turnRight();
+        timeLineLost = 0;
+    } else {
+        if (timeLineLost == 0) {
+            timeLineLost = millis();
+        }
+        lineLost();
+        Serial.println("LINE_SEARCH_NEEDED");
+    }
+}
+
+void lineLost() {
+    long currentTime = millis();
+    long elapsedTime = currentTime - timeLineLost;
+    
+    // Gira a la derecha durante los primeros 500 ms
+    if (elapsedTime < 500) {
+        turnRight();
+    } 
+    // Luego, gira a la izquierda durante los siguientes 1000 ms (hasta 1500 ms en total)
+    else if (elapsedTime < 1500) {
+        turnLeft();
+    } 
+    // Si han pasado 1500 ms (0.5s Derecha + 1s Izquierda) y la línea sigue perdida, reinicia el patrón
+    else {
+        timeLineLost = currentTime; // Reinicia el tiempo para comenzar la búsqueda a la derecha de nuevo
+    }
+}
+
+void turnLeft() {
+    digitalWrite(MOTOR_A_DIR_PIN, HIGH);
+    digitalWrite(MOTOR_B_DIR_PIN, LOW);
+    analogWrite(MOTOR_A_SPEED_PIN, TURN_SPEED);
+    analogWrite(MOTOR_B_SPEED_PIN, TURN_SPEED);
+}
+
+void turnRight() {
+    digitalWrite(MOTOR_A_DIR_PIN, LOW);
+    digitalWrite(MOTOR_B_DIR_PIN, HIGH);
+    analogWrite(MOTOR_A_SPEED_PIN, TURN_SPEED);
+    analogWrite(MOTOR_B_SPEED_PIN, TURN_SPEED);
+}
+
+void moveForward(int speed) {
+    // Set both motors to move in the forward direction
+    digitalWrite(MOTOR_A_DIR_PIN, HIGH);
+    digitalWrite(MOTOR_B_DIR_PIN, HIGH);
+    
+    // Set the speed using PWM
+    analogWrite(MOTOR_A_SPEED_PIN, speed);
+    analogWrite(MOTOR_B_SPEED_PIN, speed);
+}
+
+/**
+ * Stops all motor movement by setting PWM speed to zero.
+ */
+void stopMotors() {
+    analogWrite(MOTOR_A_SPEED_PIN, 0);
+    analogWrite(MOTOR_B_SPEED_PIN, 0);
+}
+
+void setLedColor(int r, int g, int b) {
+    leds[0] = CRGB(r, g, b);
+    FastLED.show();
+}
+// --- Ultrasonic Sensor Function ---
+
+long getDistance() {
+    // 1. Clear the trigger pin
+    digitalWrite(TRIG_PIN, LOW);
+    delayMicroseconds(2);
+    
+    // 2. Send a 10 microsecond HIGH pulse to the trigger pin
+    digitalWrite(TRIG_PIN, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(TRIG_PIN, LOW);
+    
+    // 3. Read the echo pin: pulseIn returns the duration of the sound wave travel
+    // Set a timeout of 50ms (50000 microseconds)
+    long duration = pulseIn(ECHO_PIN, HIGH, 50000); 
+    
+    // 4. Calculate the distance
+    // Distance = (Time * Speed of Sound (0.034 cm/µs)) / 2
+    long distance = duration * 0.034 / 2;
+    
+    return distance;
+}
+
+
+void setup() {
+    Serial.begin(9600);
+    Serial.println("--- Motor & Ultrasonic Test Start ---");
+
+    FastLED.addLeds<WS2812, LED_PIN, GRB>(leds, NUM_LEDS);
+    FastLED.setBrightness(LED_BRIGHTNESS);
+    
+    // 1. Configure Motor Driver Pins
+    pinMode(MOTOR_STBY_PIN, OUTPUT);
+    pinMode(MOTOR_A_DIR_PIN, OUTPUT);
+    pinMode(MOTOR_A_SPEED_PIN, OUTPUT);
+    pinMode(MOTOR_B_DIR_PIN, OUTPUT);
+    pinMode(MOTOR_B_SPEED_PIN, OUTPUT);
+    
+    // 2. Configure Ultrasonic Sensor Pins
+    pinMode(TRIG_PIN, OUTPUT);
+    pinMode(ECHO_PIN, INPUT);
+    
+    // 3. Enable the Motor Driver and stop motors initially
+    digitalWrite(MOTOR_STBY_PIN, HIGH);
+    setLedColor(255, 0, 0);
+    stopMotors();
+    Serial.println("System Initialized. Ready to move.");
+}
+
+void loop() {
+    // 1. Read the distance
+    obstacleDistance = getDistance();
+    
+    Serial.print("Distance: ");
+    Serial.print(obstacleDistance);
+    Serial.print(" cm. Action: ");
+
+    readSensors();
+
+    // 2. Implement basic obstacle avoidance logic
+    if (obstacleDistance > STOP_DISTANCE_CM || obstacleDistance == 0) {
+        followLine();
+        
+    } else {
+        // Obstacle detected close enough to stop
+        stopMotors();
+        Serial.println("STOPPED (Obstacle too close!)");
+        timeLineLost = 0; // Reset search time if stopped for an obstacle
+    }
+    
+    // Wait for the defined interval before the next cycle
+    delay(LOOP_DELAY_MS);
+}
