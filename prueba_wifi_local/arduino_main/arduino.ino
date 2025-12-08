@@ -13,6 +13,7 @@
 #define CENTER_SENSOR_PIN A1
 #define RIGHT_SENSOR_PIN A0
 
+#define PIN_RBGLED 4
 #define LED_PIN 2
 #define NUM_LEDS 1
 #define LED_BRIGHTNESS 50
@@ -26,7 +27,7 @@
 
 #define LED_PIN 2
 #define NUM_LEDS 1
-#define LED_BRIGHTNESS 50
+#define LED_BRIGHTNESS 20
 
 CRGB leds[NUM_LEDS];
 
@@ -157,7 +158,7 @@ void setup() {
     Serial.begin(9600);
     Serial.println("--- Motor & Ultrasonic Test Start ---");
 
-    FastLED.addLeds<WS2812, LED_PIN, GRB>(leds, NUM_LEDS);
+    FastLED.addLeds<NEOPIXEL, PIN_RBGLED>(leds, NUM_LEDS);
     FastLED.setBrightness(LED_BRIGHTNESS);
     
     // 1. Configure Motor Driver Pins
@@ -173,7 +174,8 @@ void setup() {
     
     // 3. Enable the Motor Driver and stop motors initially
     digitalWrite(MOTOR_STBY_PIN, HIGH);
-    setLedColor(255, 0, 0);
+    // setLedColor(255, 0, 0);
+    FastLED.showColor(Color(255, 0, 0));
     stopMotors();
     Serial.println("System Initialized. Ready to move.");
 }
