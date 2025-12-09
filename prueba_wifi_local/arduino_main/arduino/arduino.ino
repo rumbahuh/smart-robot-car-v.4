@@ -46,6 +46,12 @@ bool canStart = false;
 // --- GLOBAL VARIABLE ---
 long obstacleDistance;
 
+uint32_t Color(uint8_t r, uint8_t g, uint8_t b)
+{
+  return (((uint32_t)r << 16) | ((uint32_t)g << 8) | b);
+}
+
+
  void readSensors() {
     leftSensor = analogRead(LEFT_SENSOR_PIN);
     centerSensor = analogRead(CENTER_SENSOR_PIN);
@@ -178,33 +184,59 @@ void setup() {
     FastLED.showColor(Color(255, 0, 0));
     stopMotors();
     Serial.println("System Initialized. Ready to move.");
+
+    String sendBuff;
+
+    // To make this code works, remember that the switch S1 should be set to "CAM"
+    while(1) {
+
+        if (Serial.available()) {
+
+        char c = Serial.read();
+        sendBuff += c;
+        
+        if (c == '}')  {            
+            Serial.print("Received data in serial port from ESP32: ");
+            Serial.println(sendBuff);
+
+            // Set Red Green to LED
+            FastLED.showColor(Color(0, 255, 0));
+            sendBuff = "";
+            break;
+        } 
+
+        }
+    }
+    canStart = true;
+
 }
-
+/*
 void checkSerialCommunication() {
-    String receivedCommand = "";
-    if (Serial.available()) {
-        String message = Serial.readString();
-        receivedCommand = Serial.readStringUntil('\n');
-        message.trim();
-        receivedCommand.trim();
+    while(1) {
 
-        if (message == "START_CONFIRMED" || receivedCommand.equals("START_CONFIRMED")) {
-            canStart = true;
-            Serial.println("START_LAP_READY");
-        } else if (message == "STOP") {
-            canStart = false;
-            stopMotors();
-        } else {
-            Serial.print("Received unexpected: '");
-            Serial.print(receivedCommand);
-            Serial.println("'");
+        if (Serial.available()) {
+
+        char c = Serial.read();
+        sendBuff += c;
+        
+        if (c == '}')  {            
+            Serial.print("Received data in serial port from ESP32: ");
+            Serial.println(sendBuff);
+
+            // Set Red Green to LED
+            FastLED.showColor(Color(0, 255, 0));
+            sendBuff = "";
+            break;
+        } 
+
         }
     }
 }
+*/
 
 void loop() {
 
-    checkSerialCommunication();
+    //checkSerialCommunication();
 
     if (canStart) {
         // 1. Read the distance
