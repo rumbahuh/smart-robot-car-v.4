@@ -31,6 +31,15 @@ const char* wifi_password = "PASSWORD";
 #define LOOP_DELAY_MS 100
 #define MAX_LEN 10
 
+// Wifi
+#define EAP_ANONYMOUS_IDENTITY "20220719anonymous@urjc.es" // leave as it is
+#define EAP_IDENTITY "mj.mercado.2019@alumnos.urjc.es"    // Use your URJC email
+#define EAP_PASSWORD "Bubulubu19@"            // User your URJC password
+#define EAP_USERNAME "mj.mercado.2019@alumnos.urjc.es"    // Use your URJC email
+
+//SSID NAME
+const char* ssid = "eduroam"; // eduroam SSID
+
 // MQTT Topic
 String mqtt_topic = "/SETR/2025/" + String(TEAM_ID) + "/";
 
@@ -67,10 +76,12 @@ void setup()
 
 void loop() 
 {
+    /*
     if (!mqtt.ping()) {
         mqtt.disconnect();
         connect_to_mqtt();
     }
+    */
     
     check_arduino_messages();
     
@@ -95,19 +106,21 @@ void loop()
 
 void connect_to_wifi() 
 {
-    WiFi.begin(wifi_ssid, wifi_password);
-    
-    Serial.print("Connecting to WiFi");
+    Serial.print(F("Connecting to network: "));
+    Serial.println(ssid);
+    WiFi.disconnect(true); 
+
+    WiFi.begin(ssid, WPA2_AUTH_PEAP, EAP_IDENTITY, EAP_USERNAME, EAP_PASSWORD); 
+
     while (WiFi.status() != WL_CONNECTED) {
         delay(500);
-        Serial.print(".");
+        Serial.print(F("."));
     }
-    
+    Serial.println("");
+    Serial.println(F("WiFi is connected!"));
+    Serial.println(F("IP address set: "));
+    Serial.println(WiFi.localIP()); //print LAN IP
     wifi_connected = true;
-    Serial.println();
-    Serial.println("WiFi connected!");
-    Serial.print("IP address: ");
-    Serial.println(WiFi.localIP());
 }
 
 void connect_to_mqtt() 
@@ -150,7 +163,7 @@ void check_arduino_messages()
     if (Serial2.available()) {
         String message = Serial2.readString();
         message.trim();
-        
+            
         Serial.println("Received from Arduino: " + message);
         
         if (message == "START_LAP_READY") {
