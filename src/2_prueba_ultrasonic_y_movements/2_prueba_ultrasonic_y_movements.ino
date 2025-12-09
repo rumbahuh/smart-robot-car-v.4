@@ -26,25 +26,34 @@ CRGB leds[NUM_LEDS];
 // --- CONSTANTS ---
 const int BASE_SPEED = 90;
 const int TURN_SPEED = 80;
-const int LINE_THRESHOLD = 500;
-const int STOP_DISTANCE_CM = 8;     // Obstacle threshold: stop if distance is <= 8 cm
-const int LOOP_DELAY_MS = 100;       // Delay between sensor readings/actions
+const int LINE_THRESHOLD_MIN = 600; // deteccion linea franja media-baja
+const int LINE_THRESHOLD_MAX = 900; // deteccion linea franja media-alta
+const int STOP_DISTANCE_CM = 8;     // deteccion obstaculo <= 8cm
+const int LOOP_DELAY_MS = 100;      // delay entre lecturas y acciones
 
 int leftSensor, centerSensor, rightSensor;
 bool lineDetected = false;
 
-// --- GLOBAL VARIABLE ---
 long obstacleDistance;
+// Constantes del controlador PD
+const float Kp = 1500;  // Ganancia proporcional (ajustar según pruebas)
+const float Kd = 600;  // Ganancia derivativa (ajustar según pruebas)
 
- void readSensors() {
+// Variables del PD
+int error = 0;
+int lastError = 0;
+int derivative = 0;
+int correction = 0;
+
+void readSensors() {
     leftSensor = analogRead(LEFT_SENSOR_PIN);
     centerSensor = analogRead(CENTER_SENSOR_PIN);
     rightSensor = analogRead(RIGHT_SENSOR_PIN);
     
     bool previousLineState = lineDetected;
-    lineDetected = (leftSensor > LINE_THRESHOLD) || 
-                   (centerSensor > LINE_THRESHOLD) || 
-                   (rightSensor > LINE_THRESHOLD);
+    lineDetected = (leftSensor > LINE_THRESHOLD_MAX) || 
+                   (centerSensor > LINE_THRESHOLD_MAX) || 
+                   (rightSensor > LINE_THRESHOLD_MAX);
     
     if (lineDetected) {
         setLedColor(0, 255, 0);
@@ -57,31 +66,68 @@ long obstacleDistance;
     } else if (!previousLineState && lineDetected) {
         Serial.println("LINE_FOUND");
     }
+
+    // Print all three values on the same line
+    Serial.print("left: ");
+    Serial.print(leftSensor);
+    Serial.print(" | center: ");
+    Serial.print(centerSensor);
+    Serial.print(" | right: ");
+    Serial.println(rightSensor);
 }
 
 void followLine() {
-    if (centerSensor > LINE_THRESHOLD) {
-        moveForward(BASE_SPEED);
-    } else if (leftSensor > LINE_THRESHOLD) {
-        turnLeft();
-    } else if (rightSensor > LINE_THRESHOLD) {
-        turnRight();
-    } else {
-        int initialTime = millis();
-        lineLost(initialTime);
-        Serial.println("LINE_SEARCH_NEEDED");
-    }
+  // Calcular ERROR (posición de la línea)
+  // Negativo = línea a la izquierda, Positivo = línea a la derecha
+  if (centerSensor > LINE_THRESHOLD_MAX) {
+    error = 0;  // Línea centrada
+  }
+  else if (leftSensor > LINE_THRESHOLD_MAX) {
+    error = -2;  // Línea muy a la izquierda
+  }
+  else if (rightSensor > LINE_THRESHOLD_MAX) {
+    error = 2;   // Línea muy a la derecha
+  }
+  else if (leftSensor > LINE_THRESHOLD_MIN && centerSensor > LINE_THRESHOLD_MIN) {
+    error = -1;  // Línea ligeramente a la izquierda
+  }
+  else if (rightSensor > LINE_THRESHOLD_MIN && centerSensor > LINE_THRESHOLD_MIN) {
+    error = 1;   // Línea ligeramente a la derecha
+  }
+  
+  // Calcular DERIVADA (qué tan rápido cambia el error)
+  derivative = error - lastError;
+  
+  // Calcular CORRECCIÓN usando PD
+  correction = (Kp * error) + (Kd * derivative);
+  
+  // Aplicar corrección a los motores
+  int leftSpeed = BASE_SPEED - correction;
+  int rightSpeed = BASE_SPEED + correction;
+  
+  // Controlar dirección según velocidad resultante
+  if (leftSpeed >= 0) {
+    digitalWrite(MOTOR_A_DIR_PIN, HIGH);  // Motor izquierdo adelante
+    analogWrite(MOTOR_A_SPEED_PIN, constrain(leftSpeed, 0, 255));
+  } else {
+    digitalWrite(MOTOR_A_DIR_PIN, LOW);   // Motor izquierdo atrás
+    analogWrite(MOTOR_A_SPEED_PIN, constrain(-leftSpeed, 0, 255));
+  }
+  
+  if (rightSpeed >= 0) {
+    digitalWrite(MOTOR_B_DIR_PIN, HIGH);  // Motor derecho adelante
+    analogWrite(MOTOR_B_SPEED_PIN, constrain(rightSpeed, 0, 255));
+  } else {
+    digitalWrite(MOTOR_B_DIR_PIN, LOW);   // Motor derecho atrás
+    analogWrite(MOTOR_B_SPEED_PIN, constrain(-rightSpeed, 0, 255));
+  }
+  
+  // Guardar error actual para próxima iteración
+  lastError = error;
 }
 
 void lineLost(int initialTime) {
-    turnRight();
-    if (rightSensor > LINE_THRESHOLD) {
-        if(millis() - initialTime >= 500) {
-            turnLeft();
-        } else {
-            turnRight();
-        }
-    } 
+    // por hacer
 }
 
 void turnLeft() {
@@ -173,9 +219,11 @@ void loop() {
     // 1. Read the distance
     obstacleDistance = getDistance();
     
+    /*
     Serial.print("Distance: ");
     Serial.print(obstacleDistance);
     Serial.print(" cm. Action: ");
+    */
 
     readSensors();
 
