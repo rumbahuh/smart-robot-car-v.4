@@ -10,37 +10,32 @@
 #include "Adafruit_MQTT_Client.h"
 #include <ArduinoJson.h>
 
-// WiFi configuration
-const char* wifi_ssid = "WIFI_NAME";
-const char* wifi_password = "PASSWORD";
+// Wifi
+#define EAP_ANONYMOUS_IDENTITY "20220719anonymous@urjc.es" // no cambiar esta linea!
+#define EAP_IDENTITY "mj.mercado.2019@alumnos.urjc.es"     // correo URJC
+#define EAP_PASSWORD "Bubulubu19@"                         // contraseña
+#define EAP_USERNAME "mj.mercado.2019@alumnos.urjc.es"     // usuario urjc (mail)
+#define WIFI_RETRY_DELAY_MS 500
 
-// const char* wifi_ssid = "eduroam";
-// const char* wifi_username = "USER";
-// const char* wifi_password = "contraseña_eduroam";
-
-// MQTT configuration
+// MQTT config
 #define MQTT_SERVER "193.147.79.118"
 #define MQTT_PORT 21883
+#define MQTT_RETRY_DELAY_MS 5000
+
+// team info
 #define TEAM_ID "16"
 #define TEAM_NAME "DIECISEIS"
-#define PING_INTERVAL_MS 4000
+
+// serial config
 #define SERIAL_BAUD_RATE 9600
 #define SERIAL2_RX_PIN 16
 #define SERIAL2_TX_PIN 17
-#define MQTT_RETRY_DELAY_MS 5000
+
+// misc
+#define PING_INTERVAL_MS 4000
 #define LOOP_DELAY_MS 100
-#define MAX_LEN 10
 
-// Wifi
-#define EAP_ANONYMOUS_IDENTITY "20220719anonymous@urjc.es" // leave as it is
-#define EAP_IDENTITY "mj.mercado.2019@alumnos.urjc.es"    // Use your URJC email
-#define EAP_PASSWORD "Bubulubu19@"            // User your URJC password
-#define EAP_USERNAME "mj.mercado.2019@alumnos.urjc.es"    // Use your URJC email
-
-//SSID NAME
-const char* ssid = "eduroam"; // eduroam SSID
-
-// MQTT Topic
+// MQTT topic
 String mqtt_topic = "/SETR/2025/" + String(TEAM_ID) + "/";
 
 WiFiClient client;
@@ -50,7 +45,8 @@ Adafruit_MQTT_Client mqtt(&client, MQTT_SERVER, MQTT_PORT);
 Adafruit_MQTT_Publish publisher = Adafruit_MQTT_Publish(&mqtt, 
                                                         mqtt_topic.c_str());
 
-// Global variables
+// variables globales
+const char* ssid = "eduroam"; // eduroam SSID
 unsigned long start_time = 0;
 unsigned long last_ping_time = 0;
 bool lap_started = false;
@@ -59,40 +55,30 @@ bool mqtt_connected = false;
 
 void setup() 
 {
+    // inicio serial(s)
     Serial.begin(SERIAL_BAUD_RATE);
     Serial2.begin(SERIAL_BAUD_RATE, SERIAL_8N1, SERIAL2_RX_PIN, 
                   SERIAL2_TX_PIN);
     
     Serial.println("ESP32 Starting...");
     
+    // inicio de conexiones
     connect_to_wifi();
     connect_to_mqtt();
     
+    // enviar confirmacion a Arduino
     if (wifi_connected && mqtt_connected) {
         Serial2.println("START_CONFIRMED");
         Serial.println("System ready. Sent confirmation to Arduino.");
     }
 }
 
-void loop() 
+void loop()
 {
-    /*
-    if (!mqtt.ping()) {
-        mqtt.disconnect();
-        connect_to_mqtt();
-    }
-    */
-    
+    // comprobar los mensajes desde Arduino
     check_arduino_messages();
-    
-    if (wifi_connected && mqtt_connected) {
-        unsigned long current_time = millis();
-        if (current_time - last_ping_time >= PING_INTERVAL_MS) {
-            send_heartbeat_message();
-            last_ping_time = current_time;
-        }
-    }
 
+    // cada 4 segundos, se envia un mensaje de estado (ping)
     if (lap_started) {
         unsigned long current_time = millis();
         if (current_time - last_ping_time >= PING_INTERVAL_MS) {
@@ -106,21 +92,18 @@ void loop()
 
 void connect_to_wifi() 
 {
-    Serial.print(F("Connecting to network: "));
-    Serial.println(ssid);
+    Serial.print(F("Connecting to WiFi "));
     WiFi.disconnect(true); 
 
     WiFi.begin(ssid, WPA2_AUTH_PEAP, EAP_IDENTITY, EAP_USERNAME, EAP_PASSWORD); 
 
     while (WiFi.status() != WL_CONNECTED) {
-        delay(500);
+        delay(WIFI_RETRY_DELAY_MS);
         Serial.print(F("."));
     }
-    Serial.println("");
-    Serial.println(F("WiFi is connected!"));
-    Serial.println(F("IP address set: "));
-    Serial.println(WiFi.localIP()); //print LAN IP
+
     wifi_connected = true;
+    Serial.println(F("WiFi is connected!"));
 }
 
 void connect_to_mqtt() 
