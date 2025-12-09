@@ -10,28 +10,32 @@
 #include "Adafruit_MQTT_Client.h"
 #include <ArduinoJson.h>
 
-// Wifi
-#define EAP_ANONYMOUS_IDENTITY "20220719anonymous@urjc.es" // no cambiar esta linea!
-#define EAP_IDENTITY "mj.mercado.2019@alumnos.urjc.es"     // correo URJC
-#define EAP_PASSWORD "Bubulubu19@"                         // contraseña
-#define EAP_USERNAME "mj.mercado.2019@alumnos.urjc.es"     // usuario urjc (mail)
+// Wifi eduroam
+#define EAP_ANONYMOUS_IDENTITY "20220719anonymous@urjc.es" // No cambiar esta linea!
+#define EAP_IDENTITY "mj.mercado.2019@alumnos.urjc.es"     // Correo URJC
+#define EAP_PASSWORD "Bubulubu19@"                         // Contraseña
+#define EAP_USERNAME "mj.mercado.2019@alumnos.urjc.es"     // Usuario urjc (mail)
 #define WIFI_RETRY_DELAY_MS 500
+
+// Wifi local
+// #define LOCAL_SSID "mi_ssid"            // Descomentar para pruebas wifi local
+// #define LOCAL_PASSWORD "mi_contraseña"  // Descomentar para pruebas wifi local
 
 // MQTT config
 #define MQTT_SERVER "193.147.79.118"
 #define MQTT_PORT 21883
 #define MQTT_RETRY_DELAY_MS 5000
 
-// team info
+// Team info
 #define TEAM_ID "16"
 #define TEAM_NAME "DIECISEIS"
 
-// serial config
+// Serial config
 #define SERIAL_BAUD_RATE 9600
 #define SERIAL2_RX_PIN 16
 #define SERIAL2_TX_PIN 17
 
-// misc
+// Misc
 #define PING_INTERVAL_MS 4000
 #define LOOP_DELAY_MS 100
 
@@ -45,7 +49,7 @@ Adafruit_MQTT_Client mqtt(&client, MQTT_SERVER, MQTT_PORT);
 Adafruit_MQTT_Publish publisher = Adafruit_MQTT_Publish(&mqtt, 
                                                         mqtt_topic.c_str());
 
-// variables globales
+// Variables globales
 const char* ssid = "eduroam"; // eduroam SSID
 unsigned long start_time = 0;
 unsigned long last_ping_time = 0;
@@ -53,20 +57,29 @@ bool lap_started = false;
 bool wifi_connected = false;
 bool mqtt_connected = false;
 
+String sendBuff;
+
 void setup() 
 {
-    // inicio serial(s)
+    // Inicio seriales
     Serial.begin(SERIAL_BAUD_RATE);
     Serial2.begin(SERIAL_BAUD_RATE, SERIAL_8N1, SERIAL2_RX_PIN, 
                   SERIAL2_TX_PIN);
-    
     Serial.println("ESP32 Starting...");
     
-    // inicio de conexiones
-    connect_to_wifi();
+    // Delay para asegurar que Arduino este listo
+    delay(5000);
+  
+    Serial2.print("{ 'test': " + String(millis()) + " }");
+    Serial.print("Messase sent! to Arduino");
+
+    
+    // Inicio de conexiones
+    connect_to_wifi();  // eduroam
+    // connect_to_local(); // Para wifi local descomentar
     connect_to_mqtt();
     
-    // enviar confirmacion a Arduino
+    // Enviar confirmacion a Arduino
     if (wifi_connected && mqtt_connected) {
         Serial2.println("START_CONFIRMED");
         Serial.println("System ready. Sent confirmation to Arduino.");
@@ -75,10 +88,10 @@ void setup()
 
 void loop()
 {
-    // comprobar los mensajes desde Arduino
+    // Comprobar los mensajes desde Arduino
     check_arduino_messages();
 
-    // cada 4 segundos, se envia un mensaje de estado (ping)
+    // Cada 4 segundos, se envia un mensaje de estado (ping)
     if (lap_started) {
         unsigned long current_time = millis();
         if (current_time - last_ping_time >= PING_INTERVAL_MS) {
@@ -90,6 +103,7 @@ void loop()
     delay(LOOP_DELAY_MS);
 }
 
+// Conexion a la red WiFi eduroam
 void connect_to_wifi() 
 {
     Serial.print(F("Connecting to WiFi "));
@@ -104,6 +118,21 @@ void connect_to_wifi()
 
     wifi_connected = true;
     Serial.println(F("WiFi is connected!"));
+}
+
+// Conexion red wifi local
+void connect_to_local() {
+    Serial.print("Connecting to local WiFi...");
+    
+    WiFi.begin(LOCAL_SSID, LOCAL_PASSWORD);
+    
+    while (WiFi.status() != WL_CONNECTED) {
+        delay(WIFI_RETRY_DELAY_MS);
+        Serial.print(".");
+    }
+    
+    wifi_connected = true;
+    Serial.println("Local WiFi connected!");
 }
 
 void connect_to_mqtt() 
@@ -127,6 +156,7 @@ Función que mandará un mensaje en formato JSON
 para llevar cuenta de que las conexión funcionan
 cada 4 segundos.
 */
+/*
 void send_heartbeat_message() 
 {
     DynamicJsonDocument doc(256);
@@ -140,25 +170,29 @@ void send_heartbeat_message()
 
     publisher.publish(json_string.c_str());
 }
+*/
 
+// Comprobar mensajes recibidos desde Arduino
 void check_arduino_messages() 
 {
     if (Serial2.available()) {
         String message = Serial2.readString();
-        message.trim();
-            
-        Serial.println("Received from Arduino: " + message);
+        message.trim(); // Eliminar espacios en blanco
         
+        // Print para debugear
+        Serial.println("Received from Arduino: " + message);
+
+        // Procesar tipo de mensaje recibido
         if (message == "START_LAP_READY") {
-            send_start_lap_message();
+            send_start_lap_message(); // Iniciar vuelta
         } else if (message.startsWith("OBSTACLE_DETECTED:")) {
             int distance = message.substring(18).toInt();
-            send_obstacle_detected_message(distance);
-            send_end_lap_message();
+            send_obstacle_detected_message(distance); // Notificar obstaculo
+            send_end_lap_message(); // Finalizar vuelta
         } else if (message == "LINE_LOST") {
-            send_line_lost_message();
+            send_line_lost_message(); // Notificar linea perdida
         } else if (message == "LINE_FOUND") {
-            send_line_found_message();
+            send_line_found_message(); // Notificar linea encontrada
         }
     }
 }

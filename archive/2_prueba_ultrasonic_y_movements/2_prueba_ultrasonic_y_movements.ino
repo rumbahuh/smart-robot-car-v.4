@@ -1,66 +1,62 @@
-/*|----------------------------------------------------------|*/
-/*|Smart car movements and serial connections                |*/
-/*|if (Serial.available()) doesnt read anything              |*/
-/*|----------------------------------------------------------|*/
 
 #include <FastLED.h>
 
-// Ultrasonic Sensor Pins
+// Ultrasonido
 #define TRIG_PIN 13
 #define ECHO_PIN 12
 
+// Sensores infrarrojos
 #define LEFT_SENSOR_PIN A2
 #define CENTER_SENSOR_PIN A1
 #define RIGHT_SENSOR_PIN A0
 
-#define PIN_RBGLED 4
+// Led RGB
 #define LED_PIN 2
 #define NUM_LEDS 1
 #define LED_BRIGHTNESS 50
 
-// Motor Driver Pins (assuming an L298N-type driver)
+// Motores
 #define MOTOR_STBY_PIN 3
 #define MOTOR_A_DIR_PIN 7
 #define MOTOR_A_SPEED_PIN 5 // PWM for speed
 #define MOTOR_B_DIR_PIN 8
 #define MOTOR_B_SPEED_PIN 6 // PWM for speed
 
-#define LED_PIN 2
-#define NUM_LEDS 1
-#define LED_BRIGHTNESS 20
-
 CRGB leds[NUM_LEDS];
 
-// --- CONSTANTS ---
+// Constantes
 const int BASE_SPEED = 90;
 const int TURN_SPEED = 80;
-const int LINE_THRESHOLD = 500;
-const int STOP_DISTANCE_CM = 8;
-const int LOOP_DELAY_MS = 100;       // Delay between sensor readings/actions
+const int LINE_THRESHOLD_MIN = 600; // Deteccion linea franja media-baja
+const int LINE_THRESHOLD_MAX = 900; // Deteccion linea franja media-alta
+const int STOP_DISTANCE_CM = 8;     // Deteccion obstaculo <= 8cm
+const int LOOP_DELAY_MS = 100;      // Delay entre lecturas y acciones
 
 int leftSensor, centerSensor, rightSensor;
 bool lineDetected = false;
 bool obstacleDetected = false;
 bool canStart = false;
 
-// --- GLOBAL VARIABLE ---
 long obstacleDistance;
+// Constantes del controlador PD
+const float Kp = 1500;  // Ganancia proporcional (ajustar según pruebas)
+const float Kd = 600;  // Ganancia derivativa (ajustar según pruebas)
 
-uint32_t Color(uint8_t r, uint8_t g, uint8_t b)
-{
-  return (((uint32_t)r << 16) | ((uint32_t)g << 8) | b);
-}
+// Variables del PD
+int error = 0;
+int lastError = 0;
+int derivative = 0;
+int correction = 0;
 
-
- void readSensors() {
+void readSensors() {
     leftSensor = analogRead(LEFT_SENSOR_PIN);
     centerSensor = analogRead(CENTER_SENSOR_PIN);
     rightSensor = analogRead(RIGHT_SENSOR_PIN);
     
     bool previousLineState = lineDetected;
-    lineDetected = (leftSensor > LINE_THRESHOLD) || 
-                   (centerSensor > LINE_THRESHOLD) || 
-                   (rightSensor > LINE_THRESHOLD);
+    lineDetected = (leftSensor > LINE_THRESHOLD_MAX) || 
+                   (centerSensor > LINE_THRESHOLD_MAX) || 
+                   (rightSensor > LINE_THRESHOLD_MAX);
     
     if (lineDetected) {
         setLedColor(0, 255, 0);
@@ -73,31 +69,68 @@ uint32_t Color(uint8_t r, uint8_t g, uint8_t b)
     } else if (!previousLineState && lineDetected) {
         Serial.println("LINE_FOUND");
     }
+
+    // Print all three values on the same line
+    Serial.print("left: ");
+    Serial.print(leftSensor);
+    Serial.print(" | center: ");
+    Serial.print(centerSensor);
+    Serial.print(" | right: ");
+    Serial.println(rightSensor);
 }
 
 void followLine() {
-    if (centerSensor > LINE_THRESHOLD) {
-        moveForward(BASE_SPEED);
-    } else if (leftSensor > LINE_THRESHOLD) {
-        turnLeft();
-    } else if (rightSensor > LINE_THRESHOLD) {
-        turnRight();
-    } else {
-        int initialTime = millis();
-        lineLost(initialTime);
-        Serial.println("LINE_SEARCH_NEEDED");
-    }
+  // Calcular ERROR (posición de la línea)
+  // Negativo = línea a la izquierda, Positivo = línea a la derecha
+  if (centerSensor > LINE_THRESHOLD_MAX) {
+    error = 0;  // Línea centrada
+  }
+  else if (leftSensor > LINE_THRESHOLD_MAX) {
+    error = -2;  // Línea muy a la izquierda
+  }
+  else if (rightSensor > LINE_THRESHOLD_MAX) {
+    error = 2;   // Línea muy a la derecha
+  }
+  else if (leftSensor > LINE_THRESHOLD_MIN && centerSensor > LINE_THRESHOLD_MIN) {
+    error = -1;  // Línea ligeramente a la izquierda
+  }
+  else if (rightSensor > LINE_THRESHOLD_MIN && centerSensor > LINE_THRESHOLD_MIN) {
+    error = 1;   // Línea ligeramente a la derecha
+  }
+  
+  // Calcular DERIVADA (qué tan rápido cambia el error)
+  derivative = error - lastError;
+  
+  // Calcular CORRECCIÓN usando PD
+  correction = (Kp * error) + (Kd * derivative);
+  
+  // Aplicar corrección a los motores
+  int leftSpeed = BASE_SPEED - correction;
+  int rightSpeed = BASE_SPEED + correction;
+  
+  // Controlar dirección según velocidad resultante
+  if (leftSpeed >= 0) {
+    digitalWrite(MOTOR_A_DIR_PIN, HIGH);  // Motor izquierdo adelante
+    analogWrite(MOTOR_A_SPEED_PIN, constrain(leftSpeed, 0, 255));
+  } else {
+    digitalWrite(MOTOR_A_DIR_PIN, LOW);   // Motor izquierdo atrás
+    analogWrite(MOTOR_A_SPEED_PIN, constrain(-leftSpeed, 0, 255));
+  }
+  
+  if (rightSpeed >= 0) {
+    digitalWrite(MOTOR_B_DIR_PIN, HIGH);  // Motor derecho adelante
+    analogWrite(MOTOR_B_SPEED_PIN, constrain(rightSpeed, 0, 255));
+  } else {
+    digitalWrite(MOTOR_B_DIR_PIN, LOW);   // Motor derecho atrás
+    analogWrite(MOTOR_B_SPEED_PIN, constrain(-rightSpeed, 0, 255));
+  }
+  
+  // Guardar error actual para próxima iteración
+  lastError = error;
 }
 
 void lineLost(int initialTime) {
-    turnRight();
-    if (rightSensor > LINE_THRESHOLD) {
-        if(millis() - initialTime >= 500) {
-            turnLeft();
-        } else {
-            turnRight();
-        }
-    } 
+    // por hacer
 }
 
 void turnLeft() {
@@ -159,12 +192,12 @@ long getDistance() {
     return distance;
 }
 
-void setup() {
 
+void setup() {
     Serial.begin(9600);
     Serial.println("--- Motor & Ultrasonic Test Start ---");
 
-    FastLED.addLeds<NEOPIXEL, PIN_RBGLED>(leds, NUM_LEDS);
+    FastLED.addLeds<WS2812, LED_PIN, GRB>(leds, NUM_LEDS);
     FastLED.setBrightness(LED_BRIGHTNESS);
     
     // 1. Configure Motor Driver Pins
@@ -180,83 +213,31 @@ void setup() {
     
     // 3. Enable the Motor Driver and stop motors initially
     digitalWrite(MOTOR_STBY_PIN, HIGH);
-    // setLedColor(255, 0, 0);
-    FastLED.showColor(Color(255, 0, 0));
+    setLedColor(255, 0, 0);
     stopMotors();
     Serial.println("System Initialized. Ready to move.");
-
-    String sendBuff;
-
-    // To make this code works, remember that the switch S1 should be set to "CAM"
-    while(1) {
-
-        if (Serial.available()) {
-
-        char c = Serial.read();
-        sendBuff += c;
-        
-        if (c == '}')  {            
-            Serial.print("Received data in serial port from ESP32: ");
-            Serial.println(sendBuff);
-
-            // Set Red Green to LED
-            FastLED.showColor(Color(0, 255, 0));
-            sendBuff = "";
-            break;
-        } 
-
-        }
-    }
-    canStart = true;
-
 }
-/*
-void checkSerialCommunication() {
-    while(1) {
-
-        if (Serial.available()) {
-
-        char c = Serial.read();
-        sendBuff += c;
-        
-        if (c == '}')  {            
-            Serial.print("Received data in serial port from ESP32: ");
-            Serial.println(sendBuff);
-
-            // Set Red Green to LED
-            FastLED.showColor(Color(0, 255, 0));
-            sendBuff = "";
-            break;
-        } 
-
-        }
-    }
-}
-*/
 
 void loop() {
+    // 1. Read the distance
+    obstacleDistance = getDistance();
+    
+    /*
+    Serial.print("Distance: ");
+    Serial.print(obstacleDistance);
+    Serial.print(" cm. Action: ");
+    */
 
-    //checkSerialCommunication();
+    readSensors();
 
-    if (canStart) {
-        // 1. Read the distance
-        obstacleDistance = getDistance();
-
-        Serial.print("Distance: ");
-        Serial.print(obstacleDistance);
-        Serial.print(" cm. Action: ");
-
-        readSensors();
+    // 2. Implement basic obstacle avoidance logic
+    if (obstacleDistance > STOP_DISTANCE_CM || obstacleDistance == 0) {
+        followLine();
         
-        // 2. Implement basic obstacle avoidance logic
-        if (obstacleDistance > STOP_DISTANCE_CM || obstacleDistance == 0) {
-            followLine();
-            
-        } else {
-            // Obstacle detected close enough to stop
-            stopMotors();
-            Serial.println("STOPPED (Obstacle too close!)");
-        }
+    } else {
+        // Obstacle detected close enough to stop
+        stopMotors();
+        Serial.println("STOPPED (Obstacle too close!)");
     }
     
     // Wait for the defined interval before the next cycle
