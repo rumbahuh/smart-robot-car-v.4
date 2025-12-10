@@ -32,8 +32,8 @@
 
 // Serial config
 #define SERIAL_BAUD_RATE 9600
-#define SERIAL2_RX_PIN 16
-#define SERIAL2_TX_PIN 17
+#define SERIAL2_RX_PIN 33
+#define SERIAL2_TX_PIN 4
 
 // Misc
 #define PING_INTERVAL_MS 4000

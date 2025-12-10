@@ -16,6 +16,7 @@
 
 // Led RGB
 #define LED_PIN 2
+#define PIN_RBGLED 4 // Neopixel, no sé si led 2 era para otra cosa
 #define NUM_LEDS 1
 #define LED_BRIGHTNESS 50
 
@@ -109,7 +110,7 @@ void followLine() {
   derivative = error - lastError;
   
   // Calcular correcion usando PD
-  correction = (Kp * error) + (Kd * derivative);
+  correction = (kp * error) + (kd * derivative);
   
   // Aplicar corrección a los motores
   int leftSpeed = baseSpeed - correction;
