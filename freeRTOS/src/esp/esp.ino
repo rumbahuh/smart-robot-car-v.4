@@ -20,8 +20,6 @@
 // Wifi local
 // #define LOCAL_SSID "mi_ssid"            // Descomentar para pruebas wifi local
 // #define LOCAL_PASSWORD "mi_contraseña"  // Descomentar para pruebas wifi local
-#define LOCAL_SSID "DCFA"            // Descomentar para pruebas wifi local
-#define LOCAL_PASSWORD "7pd35r5njnt7xj"
 
 // MQTT config
 #define MQTT_SERVER "193.147.79.118"
@@ -111,7 +109,8 @@ void connect_to_wifi()
     Serial.print(F("Connecting to WiFi "));
     WiFi.disconnect(true); 
 
-    WiFi.begin(ssid, WPA2_AUTH_PEAP, EAP_IDENTITY, EAP_USERNAME, EAP_PASSWORD); 
+    //WiFi.begin(ssid, WPA2_AUTH_PEAP, EAP_IDENTITY, EAP_USERNAME, EAP_PASSWORD); 
+    WiFi.begin(LOCAL_SSID,LOCAL_PASSWORD); 
 
     while (WiFi.status() != WL_CONNECTED) {
         delay(WIFI_RETRY_DELAY_MS);
