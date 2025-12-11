@@ -1,93 +1,68 @@
 /*|----------------------------------------------------------|*/
 /*|Connection sketch to local wifi with generic names        |*/
-/*|As for final push, serial prints should be deleted        |*/
 /*|----------------------------------------------------------|*/
 
 #include <WiFi.h>
-#include <WiFiClientSecure.h>
-
 #include "Adafruit_MQTT.h"
 #include "Adafruit_MQTT_Client.h"
 #include <ArduinoJson.h>
 
-// Wifi eduroam
-#define EAP_ANONYMOUS_IDENTITY "20220719anonymous@urjc.es" // No cambiar esta linea!
-#define EAP_IDENTITY "wifi.fuenlabrada.acceso@urjc.es"     // Correo URJC
-#define EAP_PASSWORD "EstasenFuenlabrada.00"               // Contraseña
-#define EAP_USERNAME "wifi.fuenlabrada.acceso@urjc.es"     // Usuario urjc (mail)
+#define EAP_ANONYMOUS_IDENTITY "20220719anonymous@urjc.es"
+#define EAP_IDENTITY "mj.mercado.2019@alumnos.urjc.es"
+#define EAP_PASSWORD "Bubulubu19@"
+#define EAP_USERNAME "mj.mercado.2019@alumnos.urjc.es"
 #define WIFI_RETRY_DELAY_MS 500
 
-// Wifi local
-// #define LOCAL_SSID "mi_ssid"            // Descomentar para pruebas wifi local
-// #define LOCAL_PASSWORD "mi_contraseña"  // Descomentar para pruebas wifi local
-#define LOCAL_SSID "DCFA"                  // Descomentar para pruebas wifi local
+#define LOCAL_SSID "DCFA"
 #define LOCAL_PASSWORD "7pd35r5njnt7xj"
 
-// MQTT config
 #define MQTT_SERVER "193.147.79.118"
 #define MQTT_PORT 21883
 #define MQTT_RETRY_DELAY_MS 5000
 
-// Team info
 #define TEAM_ID "16"
 #define TEAM_NAME "DIECISEIS"
 
-// Serial config
 #define SERIAL_BAUD_RATE 9600
 #define SERIAL2_RX_PIN 33
 #define SERIAL2_TX_PIN 4
 
-// Misc
 #define PING_INTERVAL_MS 4000
 #define LOOP_DELAY_MS 100
 
-// MQTT topic
 String mqtt_topic = "/SETR/2025/" + String(TEAM_ID) + "/";
 
 WiFiClient client;
-
-// MQTT client
 Adafruit_MQTT_Client mqtt(&client, MQTT_SERVER, MQTT_PORT);
-Adafruit_MQTT_Publish publisher = Adafruit_MQTT_Publish(&mqtt, 
-                                                        mqtt_topic.c_str());
+Adafruit_MQTT_Publish publisher = Adafruit_MQTT_Publish(&mqtt, mqtt_topic.c_str());
 
-// Variables globales
-const char* ssid = "eduroam"; // eduroam SSID
+const char* ssid = "eduroam";
 unsigned long start_time = 0;
 unsigned long last_ping_time = 0;
 bool lap_started = false;
 bool wifi_connected = false;
 bool mqtt_connected = false;
 
-String sendBuff;
-
 void setup() 
 {
-    // Inicio seriales
     Serial.begin(SERIAL_BAUD_RATE);
-    Serial2.begin(SERIAL_BAUD_RATE, SERIAL_8N1, SERIAL2_RX_PIN, 
-                  SERIAL2_TX_PIN);
+    Serial2.begin(SERIAL_BAUD_RATE, SERIAL_8N1, SERIAL2_RX_PIN, SERIAL2_TX_PIN);
     
-    // Delay para asegurar que Arduino este listo
-    delay(5000);
+    delay(2000);
     
-    // Inicio de conexiones
-    connect_to_wifi();  // eduroam
-    // connect_to_local(); // Para wifi local descomentar
+    connect_to_wifi();
     connect_to_mqtt();
     
-    // Enviar confirmacion a Arduino
     if (wifi_connected && mqtt_connected) {
-        Serial2.print("{ 'test': " + String(millis()) + " }");
-        Serial.print("Messase sent! to Arduino");
+        Serial2.print("{READY}");
+        Serial.println("Ready signal sent to Arduino");
     }
 }
 
 void loop()
 {
-    // Comprobar los mensajes desde Arduino
     check_arduino_messages();
-    // Cada 4 segundos, se envia un mensaje de estado (ping)
+    
     if (lap_started) {
         unsigned long current_time = millis();
         if (current_time - last_ping_time >= PING_INTERVAL_MS) {
@@ -99,71 +74,92 @@ void loop()
     delay(LOOP_DELAY_MS);
 }
 
-// Conexion a la red WiFi eduroam
 void connect_to_wifi() 
 {
-    Serial.print(F("Connecting to WiFi "));
-    //WiFi.disconnect(true); 
-
+    Serial.println("Connecting to WiFi eduroam...");
     WiFi.begin(ssid, WPA2_AUTH_PEAP, EAP_IDENTITY, EAP_USERNAME, EAP_PASSWORD); 
 
-    while (WiFi.status() != WL_CONNECTED) {
-        delay(WIFI_RETRY_DELAY_MS);
-        Serial.print(F("."));
-    }
-
-    wifi_connected = true;
-    Serial.println(F("WiFi is connected!"));
-}
-
-// Conexion red wifi local
-void connect_to_local() {
-    Serial.print("Connecting to local WiFi...");
-    
-    WiFi.begin(LOCAL_SSID, LOCAL_PASSWORD);
-    
-    while (WiFi.status() != WL_CONNECTED) {
+    int attempts = 0;
+    while (WiFi.status() != WL_CONNECTED && attempts < 40) {
         delay(WIFI_RETRY_DELAY_MS);
         Serial.print(".");
+        attempts++;
+    }
+
+    if (WiFi.status() == WL_CONNECTED) {
+        wifi_connected = true;
+        Serial.println("\nWiFi connected!");
+        Serial.print("IP: ");
+        Serial.println(WiFi.localIP());
+    } else {
+        Serial.println("\nWiFi connection failed!");
+    }
+}
+
+void connect_to_local() {
+    Serial.println("Connecting to local WiFi...");
+    WiFi.begin(LOCAL_SSID, LOCAL_PASSWORD);
+    
+    int attempts = 0;
+    while (WiFi.status() != WL_CONNECTED && attempts < 40) {
+        delay(WIFI_RETRY_DELAY_MS);
+        Serial.print(".");
+        attempts++;
     }
     
-    wifi_connected = true;
-    Serial.println("Local WiFi connected!");
+    if (WiFi.status() == WL_CONNECTED) {
+        wifi_connected = true;
+        Serial.println("\nLocal WiFi connected!");
+        Serial.print("IP: ");
+        Serial.println(WiFi.localIP());
+    } else {
+        Serial.println("\nLocal WiFi connection failed!");
+    }
 }
 
 void connect_to_mqtt() 
 {
-    Serial.print(F("Connecting to MQTT..."));
+    Serial.println("Connecting to MQTT...");
    
     int8_t ret;
-    while ((ret = mqtt.connect()) != 0) {
+    int retries = 3;
+    
+    while ((ret = mqtt.connect()) != 0 && retries > 0) {
+        Serial.print("MQTT Error: ");
         Serial.println(mqtt.connectErrorString(ret));
-        Serial.println("Retrying MQTT connection in 5 seconds...");
+        Serial.println("Retrying in 5 seconds...");
         mqtt.disconnect();
         delay(MQTT_RETRY_DELAY_MS);
+        retries--;
     }
     
-    mqtt_connected = true;
-    Serial.println("MQTT Connected!");
+    if (ret == 0) {
+        mqtt_connected = true;
+        Serial.println("MQTT Connected!");
+    } else {
+        Serial.println("MQTT connection failed!");
+    }
 }
 
-// Comprobar mensajes recibidos desde Arduino
 void check_arduino_messages() 
 {
     if (Serial2.available()) {
-        String message = Serial2.readString();
+        String message = Serial2.readStringUntil('\n');
+        message.trim();
         
-        // Procesar tipo de mensaje recibido
+        Serial.print("Received: ");
+        Serial.println(message);
+        
         if (message == "START_LAP_READY") {
-            send_start_lap_message(); // Iniciar vuelta
+            send_start_lap_message();
         } else if (message.startsWith("OBSTACLE_DETECTED:")) {
             int distance = message.substring(18).toInt();
-            send_obstacle_detected_message(distance); // Notificar obstaculo
-            send_end_lap_message(); // Finalizar vuelta
+            send_obstacle_detected_message(distance);
+            send_end_lap_message();
         } else if (message == "LINE_LOST") {
-            send_line_lost_message(); // Notificar linea perdida
+            send_line_lost_message();
         } else if (message == "LINE_FOUND") {
-            send_line_found_message(); // Notificar linea encontrada
+            send_line_found_message();
         }
     }
 }
@@ -171,7 +167,6 @@ void check_arduino_messages()
 void send_start_lap_message() 
 {
     if (!lap_started) {
-        Serial.println("START_LAP message sent");
         DynamicJsonDocument doc(1024);
         doc["team_name"] = TEAM_NAME;
         doc["id"] = TEAM_ID;
@@ -180,14 +175,13 @@ void send_start_lap_message()
         String json_string;
         serializeJson(doc, json_string);
 
-        lap_started = true;
-
         if (publisher.publish(json_string.c_str())) {
-            Serial.println("START_LAP message sent");
+            lap_started = true;
             start_time = millis();
             last_ping_time = millis();
+            Serial.println("START_LAP sent successfully");
         } else {
-            Serial.println("Failed to send START_LAP message");
+            Serial.println("Failed to send START_LAP");
         }
     }
 }
@@ -206,13 +200,12 @@ void send_end_lap_message()
         String json_string;
         serializeJson(doc, json_string);
 
-        lap_started = false;
-        
         if (publisher.publish(json_string.c_str())) {
-            Serial.println("END_LAP message sent. Time: " + 
-                         String(lap_time) + "ms");
+            lap_started = false;
+            Serial.print("END_LAP sent. Time: ");
+            Serial.println(lap_time);
         } else {
-            Serial.println("Failed to send END_LAP message");
+            Serial.println("Failed to send END_LAP");
         }
     }
 }
@@ -229,10 +222,10 @@ void send_obstacle_detected_message(int distance)
     serializeJson(doc, json_string);
     
     if (publisher.publish(json_string.c_str())) {
-        Serial.println("OBSTACLE_DETECTED message sent. Distance: " + 
-                     String(distance) + "cm");
+        Serial.print("OBSTACLE_DETECTED sent. Distance: ");
+        Serial.println(distance);
     } else {
-        Serial.println("Failed to send OBSTACLE_DETECTED message");
+        Serial.println("Failed to send OBSTACLE_DETECTED");
     }
 }
 
@@ -247,9 +240,9 @@ void send_line_lost_message()
     serializeJson(doc, json_string);
     
     if (publisher.publish(json_string.c_str())) {
-        Serial.println("LINE_LOST message sent");
+        Serial.println("LINE_LOST sent");
     } else {
-        Serial.println("Failed to send LINE_LOST message");
+        Serial.println("Failed to send LINE_LOST");
     }
 }
 
@@ -264,9 +257,9 @@ void send_line_found_message()
     serializeJson(doc, json_string);
     
     if (publisher.publish(json_string.c_str())) {
-        Serial.println("LINE_FOUND message sent");
+        Serial.println("LINE_FOUND sent");
     } else {
-        Serial.println("Failed to send LINE_FOUND message");
+        Serial.println("Failed to send LINE_FOUND");
     }
 }
 
@@ -285,10 +278,10 @@ void send_ping_message()
         serializeJson(doc, json_string);
         
         if (publisher.publish(json_string.c_str())) {
-            Serial.println("PING message sent. Time: " + 
-                         String(current_time) + "ms");
+            Serial.print("PING sent. Time: ");
+            Serial.println(current_time);
         } else {
-            Serial.println("Failed to send PING message");
+            Serial.println("Failed to send PING");
         }
     }
 }

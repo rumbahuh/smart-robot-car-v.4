@@ -1,58 +1,47 @@
 /*|----------------------------------------------------------|*/
 /*|Smart car movements and serial connections                |*/
-/*|if (Serial.available()) doesnt read anything              |*/
 /*|----------------------------------------------------------|*/
 
 #include <FastLED.h>
 
-// Ultrasonido
 #define TRIG_PIN 13
 #define ECHO_PIN 12
-
-// Sensores infrarrojos
 #define LEFT_SENSOR_PIN A2
 #define CENTER_SENSOR_PIN A1
 #define RIGHT_SENSOR_PIN A0
-
-// Led RGB
 #define PIN_RBGLED 4
 #define NUM_LEDS 1
 #define LED_BRIGHTNESS 50
-
-// Motores
 #define MOTOR_STBY_PIN 3
 #define MOTOR_A_DIR_PIN 7
 #define MOTOR_A_SPEED_PIN 5
 #define MOTOR_B_DIR_PIN 8
 #define MOTOR_B_SPEED_PIN 6
 
-// Variables globales
 CRGB leds[NUM_LEDS];
 
-// Constantes
 const int baseSpeed = 90;
 const int lineThresholdMin = 600;
 const int lineThresholdMax = 900;
 const int stopDistanceCm = 8;
 const int loopDelayMs = 100;
 
-const float kp = 400;
+const float kp = 200;
 const float kd = 10;
 
-// Variables de sensores y control
 int leftSensor, centerSensor, rightSensor;
 bool lineDetected = false;
 bool obstacleDetected = false;
 bool canStart = false;
+bool lapStartSent = false;
 long obstacleDistance;
 
-// Variables del controlador PD
 int position = 0;
 int lastPosition = 0;
 int velocity = 0;
 float correction = 0;
 
-const int desiredPosition = 0; // pd = 0 (center line)
+const int desiredPosition = 0;
 
 uint32_t Color(uint8_t r, uint8_t g, uint8_t b) {
   return (((uint32_t)r << 16) | ((uint32_t)g << 8) | b);
@@ -82,7 +71,6 @@ void readSensors() {
 }
 
 void followLine() {
-  // Calculate position (p) from sensors
   if (centerSensor > lineThresholdMax) {
     position = 0;
   }
@@ -99,10 +87,7 @@ void followLine() {
     position = 1;
   }
   
-  // Calculate velocity (dp)
   velocity = position - lastPosition;
-  
-  // u = Kp*(pd - p) - Kd*dp
   correction = kp * (desiredPosition - position) - kd * velocity;
   
   int leftSpeed = baseSpeed - correction;
@@ -127,9 +112,6 @@ void followLine() {
   lastPosition = position;
 }
 
-void lineLost(int initialTime) {
-}
-
 void stopMotors() {
     analogWrite(MOTOR_A_SPEED_PIN, 0);
     analogWrite(MOTOR_B_SPEED_PIN, 0);
@@ -138,7 +120,6 @@ void stopMotors() {
 long getDistance() {
     digitalWrite(TRIG_PIN, LOW);
     delayMicroseconds(2);
-    
     digitalWrite(TRIG_PIN, HIGH);
     delayMicroseconds(10);
     digitalWrite(TRIG_PIN, LOW);
@@ -160,16 +141,14 @@ void setup() {
     pinMode(MOTOR_A_SPEED_PIN, OUTPUT);
     pinMode(MOTOR_B_DIR_PIN, OUTPUT);
     pinMode(MOTOR_B_SPEED_PIN, OUTPUT);
-    
     pinMode(TRIG_PIN, OUTPUT);
     pinMode(ECHO_PIN, INPUT);
     
     digitalWrite(MOTOR_STBY_PIN, HIGH);
-    
     stopMotors();
 
+    // Wait for ESP32 ready signal
     String sendBuff;
-
     while(1) {
         if (Serial.available()) {
             char c = Serial.read();
@@ -177,16 +156,24 @@ void setup() {
             
             if (c == '}')  {
                 canStart = true;
-                Serial.println("START_LAP_READY");
                 sendBuff = "";
                 break;
             } 
         }
     }
+    
+    delay(500);
 }
 
 void loop() {
     if (canStart) {
+        // Send START_LAP_READY once at the beginning
+        if (!lapStartSent) {
+            Serial.println("START_LAP_READY");
+            lapStartSent = true;
+            delay(100);
+        }
+        
         obstacleDistance = getDistance();
         readSensors();
         
@@ -194,6 +181,9 @@ void loop() {
             followLine();
         } else {
             stopMotors();
+            Serial.print("OBSTACLE_DETECTED:");
+            Serial.println(obstacleDistance);
+            while(1); // Stop program
         }
     }
     
