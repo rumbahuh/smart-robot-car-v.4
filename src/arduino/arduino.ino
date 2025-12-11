@@ -36,8 +36,8 @@ const int lineThresholdMax = 900;
 const int stopDistanceCm = 8;
 const int loopDelayMs = 100;
 
-const float kp = 0.4;
-const float kd = 0.8;
+const float kp = 400;
+const float kd = 10;
 
 // Variables de sensores y control
 int leftSensor, centerSensor, rightSensor;
@@ -176,9 +176,6 @@ void setup() {
             sendBuff += c;
             
             if (c == '}')  {
-                Serial.print("Received data in serial port from ESP32: ");
-                Serial.println(sendBuff);
-                
                 canStart = true;
                 Serial.println("START_LAP_READY");
                 sendBuff = "";

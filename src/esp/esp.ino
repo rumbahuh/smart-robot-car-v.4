@@ -42,7 +42,7 @@
 #define LOOP_DELAY_MS 100
 
 // MQTT topic
-String mqtt_topic = "/SETR/2025/" + TEAM_ID + "/";
+String mqtt_topic = "/SETR/2025/" + String(TEAM_ID) + "/";
 
 WiFiClient client;
 
@@ -67,14 +67,9 @@ void setup()
     Serial.begin(SERIAL_BAUD_RATE);
     Serial2.begin(SERIAL_BAUD_RATE, SERIAL_8N1, SERIAL2_RX_PIN, 
                   SERIAL2_TX_PIN);
-    Serial.println("ESP32 Starting...");
     
     // Delay para asegurar que Arduino este listo
     delay(5000);
-  
-    Serial2.print("{ 'test': " + String(millis()) + " }");
-    Serial.print("Messase sent! to Arduino");
-
     
     // Inicio de conexiones
     connect_to_wifi();  // eduroam
@@ -83,8 +78,8 @@ void setup()
     
     // Enviar confirmacion a Arduino
     if (wifi_connected && mqtt_connected) {
-        Serial2.println("START_CONFIRMED");
-        Serial.println("System ready. Sent confirmation to Arduino.");
+        Serial2.print("{ 'test': " + String(millis()) + " }");
+        Serial.print("Messase sent! to Arduino");
     }
 }
 
@@ -92,7 +87,6 @@ void loop()
 {
     // Comprobar los mensajes desde Arduino
     check_arduino_messages();
-
     // Cada 4 segundos, se envia un mensaje de estado (ping)
     if (lap_started) {
         unsigned long current_time = millis();
@@ -109,7 +103,7 @@ void loop()
 void connect_to_wifi() 
 {
     Serial.print(F("Connecting to WiFi "));
-    WiFi.disconnect(true); 
+    //WiFi.disconnect(true); 
 
     WiFi.begin(ssid, WPA2_AUTH_PEAP, EAP_IDENTITY, EAP_USERNAME, EAP_PASSWORD); 
 
@@ -139,7 +133,7 @@ void connect_to_local() {
 
 void connect_to_mqtt() 
 {
-    Serial.print("Connecting to MQTT...");
+    Serial.print(F("Connecting to MQTT..."));
    
     int8_t ret;
     while ((ret = mqtt.connect()) != 0) {
@@ -159,11 +153,8 @@ void check_arduino_messages()
     if (Serial2.available()) {
         String message = Serial2.readString();
         
-        // Print para debugear
-        Serial.println("Received from Arduino: " + message);
-
         // Procesar tipo de mensaje recibido
-        if (message == "{START_LAP_READY}") {
+        if (message == "START_LAP_READY") {
             send_start_lap_message(); // Iniciar vuelta
         } else if (message.startsWith("OBSTACLE_DETECTED:")) {
             int distance = message.substring(18).toInt();
@@ -180,6 +171,7 @@ void check_arduino_messages()
 void send_start_lap_message() 
 {
     if (!lap_started) {
+        Serial.println("START_LAP message sent");
         DynamicJsonDocument doc(1024);
         doc["team_name"] = TEAM_NAME;
         doc["id"] = TEAM_ID;
@@ -187,12 +179,13 @@ void send_start_lap_message()
         
         String json_string;
         serializeJson(doc, json_string);
-        
+
+        lap_started = true;
+
         if (publisher.publish(json_string.c_str())) {
             Serial.println("START_LAP message sent");
             start_time = millis();
             last_ping_time = millis();
-            lap_started = true;
         } else {
             Serial.println("Failed to send START_LAP message");
         }
@@ -212,11 +205,12 @@ void send_end_lap_message()
         
         String json_string;
         serializeJson(doc, json_string);
+
+        lap_started = false;
         
         if (publisher.publish(json_string.c_str())) {
             Serial.println("END_LAP message sent. Time: " + 
                          String(lap_time) + "ms");
-            lap_started = false;
         } else {
             Serial.println("Failed to send END_LAP message");
         }
