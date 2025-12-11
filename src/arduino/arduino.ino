@@ -1,7 +1,3 @@
-/*|----------------------------------------------------------|*/
-/*|Smart car movements and serial connections                |*/
-/*|----------------------------------------------------------|*/
-
 #include <FastLED.h>
 
 #define TRIG_PIN 13
@@ -20,28 +16,26 @@
 
 CRGB leds[NUM_LEDS];
 
-const int baseSpeed = 90;
-const int lineThresholdMin = 600;
-const int lineThresholdMax = 900;
+const int baseSpeed = 95;
+const int lineThresholdMin = 300;
+const int lineThresholdMax = 700;
 const int stopDistanceCm = 8;
-const int loopDelayMs = 100;
-
-const float kp = 200;
-const float kd = 10;
+const int loopDelayMs = 50;
+const int searchTimeoutMs = 5000;
 
 int leftSensor, centerSensor, rightSensor;
 bool lineDetected = false;
-bool obstacleDetected = false;
 bool canStart = false;
 bool lapStartSent = false;
+bool isSearching = false;
+bool searchInitSent = false;
 long obstacleDistance;
+unsigned long searchStartTime = 0;
+int lastKnownDirection = 0;
 
-int position = 0;
-int lastPosition = 0;
-int velocity = 0;
-float correction = 0;
-
-const int desiredPosition = 0;
+// Line visibility tracking
+unsigned long totalReadings = 0;
+unsigned long lineDetectedReadings = 0;
 
 uint32_t Color(uint8_t r, uint8_t g, uint8_t b) {
   return (((uint32_t)r << 16) | ((uint32_t)g << 8) | b);
@@ -53,9 +47,18 @@ void readSensors() {
     rightSensor = analogRead(RIGHT_SENSOR_PIN);
     
     bool previousLineState = lineDetected;
-    lineDetected = (leftSensor > lineThresholdMax) || 
-                   (centerSensor > lineThresholdMax) || 
-                   (rightSensor > lineThresholdMax);
+    lineDetected = (leftSensor > lineThresholdMin) || 
+                   (centerSensor > lineThresholdMin) || 
+                   (rightSensor > lineThresholdMin);
+    
+    // Track statistics
+    totalReadings++;
+    if (lineDetected) {
+        lineDetectedReadings++;
+        if (leftSensor > lineThresholdMin) lastKnownDirection = -1;
+        else if (rightSensor > lineThresholdMin) lastKnownDirection = 1;
+        else lastKnownDirection = 0;
+    }
     
     if (lineDetected) {
         FastLED.showColor(Color(0, 255, 0));
@@ -65,51 +68,80 @@ void readSensors() {
     
     if (previousLineState && !lineDetected) {
         Serial.println("LINE_LOST");
+        isSearching = true;
+        searchStartTime = millis();
+        searchInitSent = false;
     } else if (!previousLineState && lineDetected) {
+        if (isSearching && searchInitSent) {
+            Serial.println("STOP_LINE_SEARCH");
+        }
         Serial.println("LINE_FOUND");
+        isSearching = false;
+        searchInitSent = false;
     }
 }
 
 void followLine() {
+  int leftSpeed, rightSpeed;
+  
   if (centerSensor > lineThresholdMax) {
-    position = 0;
+    leftSpeed = baseSpeed;
+    rightSpeed = baseSpeed;
   }
   else if (leftSensor > lineThresholdMax) {
-    position = -2;
+    leftSpeed = baseSpeed;
+    rightSpeed = baseSpeed * 0.2;
   }
   else if (rightSensor > lineThresholdMax) {
-    position = 2;
+    leftSpeed = baseSpeed * 0.2;
+    rightSpeed = baseSpeed;
   }
   else if (leftSensor > lineThresholdMin && centerSensor > lineThresholdMin) {
-    position = -1;
+    leftSpeed = baseSpeed;
+    rightSpeed = baseSpeed * 0.5;
   }
   else if (rightSensor > lineThresholdMin && centerSensor > lineThresholdMin) {
-    position = 1;
+    leftSpeed = baseSpeed * 0.5;
+    rightSpeed = baseSpeed;
+  }
+  else if (leftSensor > lineThresholdMin) {
+    leftSpeed = baseSpeed;
+    rightSpeed = baseSpeed * 0.3;
+  }
+  else if (rightSensor > lineThresholdMin) {
+    leftSpeed = baseSpeed * 0.3;
+    rightSpeed = baseSpeed;
+  }
+  else {
+    leftSpeed = baseSpeed * 0.6;
+    rightSpeed = baseSpeed * 0.6;
   }
   
-  velocity = position - lastPosition;
-  correction = kp * (desiredPosition - position) - kd * velocity;
-  
-  int leftSpeed = baseSpeed - correction;
-  int rightSpeed = baseSpeed + correction;
-  
-  if (leftSpeed >= 0) {
-    digitalWrite(MOTOR_A_DIR_PIN, HIGH);
-    analogWrite(MOTOR_A_SPEED_PIN, constrain(leftSpeed, 0, 255));
-  } else {
-    digitalWrite(MOTOR_A_DIR_PIN, LOW);
-    analogWrite(MOTOR_A_SPEED_PIN, constrain(-leftSpeed, 0, 255));
-  }
-  
-  if (rightSpeed >= 0) {
-    digitalWrite(MOTOR_B_DIR_PIN, HIGH);
-    analogWrite(MOTOR_B_SPEED_PIN, constrain(rightSpeed, 0, 255));
-  } else {
-    digitalWrite(MOTOR_B_DIR_PIN, LOW);
-    analogWrite(MOTOR_B_SPEED_PIN, constrain(-rightSpeed, 0, 255));
-  }
-  
-  lastPosition = position;
+  digitalWrite(MOTOR_A_DIR_PIN, HIGH);
+  digitalWrite(MOTOR_B_DIR_PIN, HIGH);
+  analogWrite(MOTOR_A_SPEED_PIN, constrain(leftSpeed, 0, 255));
+  analogWrite(MOTOR_B_SPEED_PIN, constrain(rightSpeed, 0, 255));
+}
+
+void searchLine() {
+    if (!searchInitSent) {
+        Serial.println("INIT_LINE_SEARCH");
+        searchInitSent = true;
+    }
+    
+    int searchSpeed = baseSpeed * 0.5;
+    
+    if (lastKnownDirection < 0) {
+        digitalWrite(MOTOR_A_DIR_PIN, HIGH);
+        digitalWrite(MOTOR_B_DIR_PIN, HIGH);
+        analogWrite(MOTOR_A_SPEED_PIN, searchSpeed);
+        analogWrite(MOTOR_B_SPEED_PIN, 0);
+    } else {
+        digitalWrite(MOTOR_A_DIR_PIN, HIGH);
+        digitalWrite(MOTOR_B_DIR_PIN, HIGH);
+        analogWrite(MOTOR_A_SPEED_PIN, 0);
+        analogWrite(MOTOR_B_SPEED_PIN, searchSpeed);
+    }
 }
 
 void stopMotors() {
@@ -147,7 +179,6 @@ void setup() {
     digitalWrite(MOTOR_STBY_PIN, HIGH);
     stopMotors();
 
-    // Wait for ESP32 ready signal
     String sendBuff;
     while(1) {
         if (Serial.available()) {
@@ -167,7 +198,6 @@ void setup() {
 
 void loop() {
     if (canStart) {
-        // Send START_LAP_READY once at the beginning
         if (!lapStartSent) {
             Serial.println("START_LAP_READY");
             lapStartSent = true;
@@ -177,13 +207,32 @@ void loop() {
         obstacleDistance = getDistance();
         readSensors();
         
+        if (isSearching && (millis() - searchStartTime > searchTimeoutMs)) {
+            stopMotors();
+            Serial.println("SEARCH_TIMEOUT");
+            while(1);
+        }
+        
         if (obstacleDistance > stopDistanceCm || obstacleDistance == 0) {
-            followLine();
+            if (isSearching) {
+                searchLine();
+            } else {
+                followLine();
+            }
         } else {
             stopMotors();
+            
+            // Send visibility percentage
+            float visibilityPercent = (totalReadings > 0) ? 
+                (float)lineDetectedReadings / totalReadings * 100.0 : 0.0;
+            Serial.print("VISIBLE_LINE:");
+            Serial.println(visibilityPercent);
+            delay(100);
+            
+            // Send obstacle with distance
             Serial.print("OBSTACLE_DETECTED:");
             Serial.println(obstacleDistance);
-            while(1); // Stop program
+            while(1);
         }
     }
     

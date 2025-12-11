@@ -1,3 +1,6 @@
+/*|----------------------------------------------------------|*/
+/*|ESP32 WiFi and MQTT with FreeRTOS                         |*/
+/*|----------------------------------------------------------|*/
 
 #include <WiFi.h>
 #include "Adafruit_MQTT.h"
@@ -5,13 +8,13 @@
 #include <ArduinoJson.h>
 
 #define EAP_ANONYMOUS_IDENTITY "20220719anonymous@urjc.es"
-#define EAP_IDENTITY "wifi.fuenlabrada.acceso@urjc.es"
-#define EAP_PASSWORD "EstasenFuenlabrada.00"
-#define EAP_USERNAME "wifi.fuenlabrada.acceso@urjc.es"
+#define EAP_IDENTITY "mj.mercado.2019@alumnos.urjc.es"
+#define EAP_PASSWORD "Bubulubu19@"
+#define EAP_USERNAME "mj.mercado.2019@alumnos.urjc.es"
 #define WIFI_RETRY_DELAY_MS 500
 
-#define LOCAL_SSID "DIGIFIBRA-NsKx"
-#define LOCAL_PASSWORD "EscXY2U24f"
+#define LOCAL_SSID "DCFA"
+#define LOCAL_PASSWORD "7pd35r5njnt7xj"
 
 #define MQTT_SERVER "193.147.79.118"
 #define MQTT_PORT 21883
@@ -33,10 +36,18 @@ Adafruit_MQTT_Client mqtt(&client, MQTT_SERVER, MQTT_PORT);
 Adafruit_MQTT_Publish publisher = Adafruit_MQTT_Publish(&mqtt, mqtt_topic.c_str());
 
 const char* ssid = "eduroam";
-unsigned long start_time = 0;
-bool lap_started = false;
-bool wifi_connected = false;
-bool mqtt_connected = false;
+volatile unsigned long start_time = 0;
+volatile bool lap_started = false;
+volatile bool wifi_connected = false;
+volatile bool mqtt_connected = false;
+
+// Event flags for message processing
+volatile bool eventStartLap = false;
+volatile bool eventEndLap = false;
+volatile bool eventObstacle = false;
+volatile bool eventLineLost = false;
+volatile bool eventLineFound = false;
+volatile int obstacleDistance = 0;
 
 void connect_to_wifi() 
 {
@@ -203,24 +214,6 @@ void send_line_found_message()
     }
 }
 
-void send_visible_line_message(float percent) 
-{
-    DynamicJsonDocument doc(1024);
-    doc["team_name"] = TEAM_NAME;
-    doc["id"] = TEAM_ID;
-    doc["action"] = "VISIBLE_LINE";
-    doc["value"] = percent;
-    
-    String json_string;
-    serializeJson(doc, json_string);
-    
-    if (publisher.publish(json_string.c_str())) {
-        Serial.print("VISIBLE_LINE sent: ");
-        Serial.println(percent);
-    }
-}
-
-
 void send_ping_message() 
 {
     if (lap_started) {
@@ -244,47 +237,111 @@ void send_ping_message()
     }
 }
 
-// Tarea para comprobar los mensajes que manda Arduino
-void TaskArduinoComm(void *pvParameters) {
-  (void) pvParameters;
-  
-  for (;;) {
-    if (Serial2.available()) {
-        String message = Serial2.readStringUntil('\n');
-        message.trim();
-        
-        Serial.print("Received: ");
-        Serial.println(message);
-        
-        if (message == "START_LAP_READY") {
-            send_start_lap_message();
-        } else if (message.startsWith("OBSTACLE_DETECTED:")) {
-            int distance = message.substring(18).toInt();
-            send_obstacle_detected_message(distance);
-            send_end_lap_message();
-        } else if (message == "LINE_LOST") {
-            send_line_lost_message();
-        } else if (message == "LINE_FOUND") {
-            send_line_found_message();
-        }else if (message.startsWith("VISIBLE_LINE:")) {
-            float percent = message.substring(13).toFloat();
-            send_visible_line_message(percent);
-        }
+// Task: Initialize WiFi and MQTT connections
+void TaskInitConnections(void *pvParameters) {
+    (void) pvParameters;
+    
+    connect_to_wifi();
+    connect_to_mqtt();
+    
+    if (wifi_connected && mqtt_connected) {
+        Serial2.print("{READY}");
+        Serial.println("Ready signal sent to Arduino");
     }
-    vTaskDelay(100 / portTICK_PERIOD_MS);
-  }
+    
+    // Task deletes itself after completion
+    vTaskDelete(NULL);
 }
 
-// Tarea para mandar ping cada cierto tiempo
-void TaskPing(void *pvParameters) {
-  (void) pvParameters;
-  
-  for (;;) {
-    if (lap_started) {
-        send_ping_message();
+// Task: Read messages from Arduino via Serial2
+void TaskReadArduino(void *pvParameters) {
+    (void) pvParameters;
+    
+    for (;;) {
+        if (Serial2.available()) {
+            String message = Serial2.readStringUntil('\n');
+            message.trim();
+            
+            Serial.print("Received: ");
+            Serial.println(message);
+            
+            // Set event flags based on message
+            if (message == "START_LAP_READY") {
+                eventStartLap = true;
+            } else if (message.startsWith("OBSTACLE_DETECTED:")) {
+                obstacleDistance = message.substring(18).toInt();
+                eventObstacle = true;
+                eventEndLap = true;
+            } else if (message == "LINE_LOST") {
+                eventLineLost = true;
+            } else if (message == "LINE_FOUND") {
+                eventLineFound = true;
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
-    vTaskDelay(PING_INTERVAL_MS / portTICK_PERIOD_MS);
-  }
+}
+
+// Task: Process messages and send MQTT
+void TaskProcessMessages(void *pvParameters) {
+    (void) pvParameters;
+    
+    for (;;) {
+        // Process events
+        if (eventStartLap) {
+            send_start_lap_message();
+            eventStartLap = false;
+        }
+        
+        if (eventObstacle) {
+            send_obstacle_detected_message(obstacleDistance);
+            eventObstacle = false;
+        }
+        
+        if (eventEndLap) {
+            send_end_lap_message();
+            eventEndLap = false;
+        }
+        
+        if (eventLineLost) {
+            send_line_lost_message();
+            eventLineLost = false;
+        }
+        
+        if (eventLineFound) {
+            send_line_found_message();
+            eventLineFound = false;
+        }
+        
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
+// Task: Send periodic PING messages
+void TaskSendPing(void *pvParameters) {
+    (void) pvParameters;
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    
+    for (;;) {
+        if (lap_started) {
+            send_ping_message();
+        }
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(PING_INTERVAL_MS));
+    }
+}
+
+// Task: Monitor WiFi connection
+void TaskMonitorWiFi(void *pvParameters) {
+    (void) pvParameters;
+    
+    for (;;) {
+        if (WiFi.status() != WL_CONNECTED && wifi_connected) {
+            Serial.println("WiFi disconnected! Attempting reconnection...");
+            wifi_connected = false;
+            WiFi.reconnect();
+        }
+        vTaskDelay(pdMS_TO_TICKS(5000));
+    }
 }
 
 void setup() 
@@ -294,20 +351,19 @@ void setup()
     
     delay(2000);
     
-    connect_to_local();
-    connect_to_mqtt();
+    // Create tasks with appropriate priorities
+    xTaskCreate(TaskInitConnections, "InitConn", 4096, NULL, 4, NULL);
+    xTaskCreate(TaskReadArduino, "ReadArduino", 2048, NULL, 3, NULL);
+    xTaskCreate(TaskProcessMessages, "ProcessMsg", 4096, NULL, 2, NULL);
+    xTaskCreate(TaskSendPing, "SendPing", 2048, NULL, 1, NULL);
+    xTaskCreate(TaskMonitorWiFi, "MonitorWiFi", 2048, NULL, 1, NULL);
     
-    // Mensaje READY unicamente tras conectarse al wifi y al server mqtt
-    if (wifi_connected && mqtt_connected) {
-        Serial2.print("{READY}");
-        // Serial.println("Ready signal sent to Arduino"); // Print para debugs
-    }
-    
-    // creacion de las tareas
-    xTaskCreate(TaskArduinoComm, "ArduinoComm", 4096, NULL, 1, NULL);
-    xTaskCreate(TaskPing, "Ping", 2048, NULL, 1, NULL);
+    // Note: ESP32 FreeRTOS scheduler is already running
 }
 
-void loop() {
-  // Hola :)
+void loop() 
+{
+    // Keep loop empty - FreeRTOS tasks handle everything
+    // Small delay to prevent watchdog issues
+    vTaskDelay(pdMS_TO_TICKS(1000));
 }
