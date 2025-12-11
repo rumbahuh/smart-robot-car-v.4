@@ -12,15 +12,15 @@
 
 // Wifi eduroam
 #define EAP_ANONYMOUS_IDENTITY "20220719anonymous@urjc.es" // No cambiar esta linea!
-#define EAP_IDENTITY "wifi.fuenlabrada.acceso@alumnos.urjc.es"     // Correo URJC
-#define EAP_PASSWORD "EstasenFuenlabrada.00"                         // Contraseña
+#define EAP_IDENTITY "wifi.fuenlabrada.acceso@urjc.es"     // Correo URJC
+#define EAP_PASSWORD "EstasenFuenlabrada.00"               // Contraseña
 #define EAP_USERNAME "wifi.fuenlabrada.acceso@urjc.es"     // Usuario urjc (mail)
 #define WIFI_RETRY_DELAY_MS 500
 
 // Wifi local
 // #define LOCAL_SSID "mi_ssid"            // Descomentar para pruebas wifi local
 // #define LOCAL_PASSWORD "mi_contraseña"  // Descomentar para pruebas wifi local
-#define LOCAL_SSID "DCFA"            // Descomentar para pruebas wifi local
+#define LOCAL_SSID "DCFA"                  // Descomentar para pruebas wifi local
 #define LOCAL_PASSWORD "7pd35r5njnt7xj"
 
 // MQTT config
@@ -42,7 +42,7 @@
 #define LOOP_DELAY_MS 100
 
 // MQTT topic
-String mqtt_topic = "/SETR/2025/" + String(TEAM_ID) + "/";
+String mqtt_topic = "/SETR/2025/" + TEAM_ID + "/";
 
 WiFiClient client;
 
@@ -158,13 +158,12 @@ void check_arduino_messages()
 {
     if (Serial2.available()) {
         String message = Serial2.readString();
-        message.trim(); // Eliminar espacios en blanco
         
         // Print para debugear
         Serial.println("Received from Arduino: " + message);
 
         // Procesar tipo de mensaje recibido
-        if (message == "START_LAP_READY") {
+        if (message == "{START_LAP_READY}") {
             send_start_lap_message(); // Iniciar vuelta
         } else if (message.startsWith("OBSTACLE_DETECTED:")) {
             int distance = message.substring(18).toInt();
