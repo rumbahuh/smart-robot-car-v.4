@@ -15,7 +15,6 @@
 #define RIGHT_SENSOR_PIN A0
 
 // Led RGB
-#define LED_PIN 2
 #define PIN_RBGLED 4 // Neopixel, no sé si led 2 era para otra cosa
 #define NUM_LEDS 1
 #define LED_BRIGHTNESS 50
@@ -37,8 +36,8 @@ const int lineThresholdMax = 900; // Deteccion linea franja media-alta
 const int stopDistanceCm = 8;     // Deteccion obstaculo a 8cm
 const int loopDelayMs = 100;      // Delay entre lecturas y acciones
 
-const float kp = 1500;            // Ganancia proporcional (ajustar según pruebas)
-const float kd = 600;             // Ganancia derivativa (ajustar según pruebas)
+const float kp = 400;            // Ganancia proporcional (ajustar según pruebas)
+const float kd = 150;             // Ganancia derivativa (ajustar según pruebas)
 
 // Variables de sensores y control
 int leftSensor, centerSensor, rightSensor;
@@ -209,6 +208,7 @@ void setup() {
                 // ------
 
                 canStart = true;
+                Serial.println("START_LAP_READY");
                 sendBuff = "";
                 break;
             } 

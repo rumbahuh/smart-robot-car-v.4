@@ -12,9 +12,9 @@
 
 // Wifi eduroam
 #define EAP_ANONYMOUS_IDENTITY "20220719anonymous@urjc.es" // No cambiar esta linea!
-#define EAP_IDENTITY "mj.mercado.2019@alumnos.urjc.es"     // Correo URJC
-#define EAP_PASSWORD "Bubulubu19@"                         // Contraseña
-#define EAP_USERNAME "mj.mercado.2019@alumnos.urjc.es"     // Usuario urjc (mail)
+#define EAP_IDENTITY "wifi.fuenlabrada.acceso@alumnos.urjc.es"     // Correo URJC
+#define EAP_PASSWORD "EstasenFuenlabrada.00"                         // Contraseña
+#define EAP_USERNAME "wifi.fuenlabrada.acceso@urjc.es"     // Usuario urjc (mail)
 #define WIFI_RETRY_DELAY_MS 500
 
 // Wifi local
@@ -69,6 +69,25 @@ void setup()
     
     // Delay para asegurar que Arduino este listo
     delay(5000);
+
+// Comprobar mensajes recibidos desde Arduino
+void check_arduino_messages() 
+{
+    if (Serial2.available()) {
+        String message = Serial2.readString();
+        message.trim(); // Eliminar espacios en blanco
+        
+        // Print para debugear
+        Serial.println("Received from Arduino: " + message);
+
+        // Procesar tipo de mensaje recibido
+        if (message == "START_LAP_READY") {
+            send_start_lap_message(); // Iniciar vuelta
+        } else if (message.startsWith("OBSTACLE_DETECTED:")) {
+            int distance = message.substring(18).toInt();
+            send_obstacle_detected_message(distance); // Notificar obstaculo
+            send_end_lap_message(); // Finalizar vuelta
+  
   
     Serial2.print("{ 'test': " + String(millis()) + " }");
     Serial.print("Messase sent! to Arduino");
@@ -151,27 +170,6 @@ void connect_to_mqtt()
     mqtt_connected = true;
     Serial.println("MQTT Connected!");
 }
-
-/*
-Función que mandará un mensaje en formato JSON
-para llevar cuenta de que las conexión funcionan
-cada 4 segundos.
-*/
-/*
-void send_heartbeat_message() 
-{
-    DynamicJsonDocument doc(256);
-    doc["team_name"] = TEAM_NAME;
-    doc["id"] = TEAM_ID;
-    doc["status"] = "OK";
-    doc["timestamp"] = millis();
-
-    String json_string;
-    serializeJson(doc, json_string);
-
-    publisher.publish(json_string.c_str());
-}
-*/
 
 // Comprobar mensajes recibidos desde Arduino
 void check_arduino_messages() 

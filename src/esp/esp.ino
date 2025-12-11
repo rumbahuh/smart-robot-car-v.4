@@ -12,9 +12,9 @@
 
 // Wifi eduroam
 #define EAP_ANONYMOUS_IDENTITY "20220719anonymous@urjc.es" // No cambiar esta linea!
-#define EAP_IDENTITY "mj.mercado.2019@alumnos.urjc.es"     // Correo URJC
-#define EAP_PASSWORD "Bubulubu19@"                         // Contraseña
-#define EAP_USERNAME "mj.mercado.2019@alumnos.urjc.es"     // Usuario urjc (mail)
+#define EAP_IDENTITY "wifi.fuenlabrada.acceso@alumnos.urjc.es"     // Correo URJC
+#define EAP_PASSWORD "EstasenFuenlabrada.00"                         // Contraseña
+#define EAP_USERNAME "wifi.fuenlabrada.acceso@urjc.es"     // Usuario urjc (mail)
 #define WIFI_RETRY_DELAY_MS 500
 
 // Wifi local
@@ -140,7 +140,7 @@ void connect_to_local() {
 void connect_to_mqtt() 
 {
     Serial.print("Connecting to MQTT...");
-    
+   
     int8_t ret;
     while ((ret = mqtt.connect()) != 0) {
         Serial.println(mqtt.connectErrorString(ret));
@@ -152,27 +152,6 @@ void connect_to_mqtt()
     mqtt_connected = true;
     Serial.println("MQTT Connected!");
 }
-
-/*
-Función que mandará un mensaje en formato JSON
-para llevar cuenta de que las conexión funcionan
-cada 4 segundos.
-*/
-/*
-void send_heartbeat_message() 
-{
-    DynamicJsonDocument doc(256);
-    doc["team_name"] = TEAM_NAME;
-    doc["id"] = TEAM_ID;
-    doc["status"] = "OK";
-    doc["timestamp"] = millis();
-
-    String json_string;
-    serializeJson(doc, json_string);
-
-    publisher.publish(json_string.c_str());
-}
-*/
 
 // Comprobar mensajes recibidos desde Arduino
 void check_arduino_messages() 
