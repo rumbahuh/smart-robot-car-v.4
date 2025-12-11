@@ -17,8 +17,8 @@
 CRGB leds[NUM_LEDS];
 
 const int baseSpeed = 95;
-const int lineThresholdMin = 300;
-const int lineThresholdMax = 700;
+const int lineThresholdMin = 300; // 600-700 in lab
+const int lineThresholdMax = 700; // 900 in lab
 const int stopDistanceCm = 8;
 const int loopDelayMs = 50;
 const int searchTimeoutMs = 5000;
